@@ -61,12 +61,37 @@ get_top_corr_mods <- function(network_dir, pseudobulk_legend, top_qval_mods_df) 
         }
     }
 
-    # Get top corr module enrichment
-
-
     top_corr_mods_df <- do.call(rbind, top_corr_mods_list)
+
+    # Get top corr modules enrichment qvalues
+    enrich_pvals <- get_top_corr_mods_enrichments(top_corr_mods_25SD_PosBC_df, ctype_genes_list, mod_def)
+    enrich_qvals <- qvalue(enrich_pvals)$qvalue
+    top_corr_mods_df$Qval <- enrich_qvals 
+
     top_corr_mods_df %>%
         arrange(Cor)
+}
+
+get_top_corr_mods_enrichments <- function(top_corr_mods_df, ctype_genes_list, mod_def="PosFDR") {
+    enrich_pvals <- c()
+    for (i in 1:nrow(top_corr_mods_df)) {
+        # Get genes for most correlated module
+        kME <- fread(top_corr_mods_df$New_kME_path[i], data.table=FALSE)
+        mod_assignment_col <- grep(mod_def, colnames(kME))
+        mod_genes <- kME$Gene[kME[,mod_assignment_col] %in% top_corr_mods_df$Module[i]]
+        if (length(mod_genes) > 0) {
+            all_genes <- kME$Gene
+            ctype_genes <- ctype_genes_list[[which(names(ctype_genes_list) %in% top_corr_mods_df$Cell_type[i])]]     
+            if (length(ctype_genes) > 0) {
+                enrich_pvals[i] <- fisher_test(ctype_genes, mod_genes, all=all_genes)
+            } else {
+                enrich_pvals[i] <- "No DE genes"
+            }
+        } else {
+            enrich_pvals[i] <- "No kME genes"
+        }
+    }
+    enrich_pvals
 }
 
 get_top_corr_mod_stats <- function(top_corr_mods_df) {
