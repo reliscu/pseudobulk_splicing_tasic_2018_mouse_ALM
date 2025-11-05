@@ -1,7 +1,13 @@
 source("/mnt/lareaulab/reliscu/code/fisher_test.R")
 source("/mnt/lareaulab/reliscu/projects/NSF_GRFP/analyses/pseudobulk_test/tasic_2018/mouse_ALM/code/enrichment_fxns.R")
 
-get_top_corr_mods <- function(network_dir, pseudobulk_legend, top_qval_mods_df) {
+library(ggplot2)
+
+source("/mnt/lareaulab/reliscu/code/ggplot_theme.R")
+
+theme_set(default_theme())
+
+get_top_corr_mods <- function(network_dir, pseudobulk_legend, top_qval_mods_df, ctype_genes_list, mod_def) {
     ctypes <- top_qval_mods_df$Cell_type
     top_corr_mods_list <- vector(mode="list", length=length(ctypes))
     total_cells_per_sample <- colSums(pseudobulk_legend[,-c(1, 2)])
