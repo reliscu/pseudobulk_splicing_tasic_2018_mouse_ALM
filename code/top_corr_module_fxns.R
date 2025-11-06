@@ -17,6 +17,8 @@ get_top_corr_mods <- function(network_dir, pseudobulk_legend, top_qval_mods_df, 
         mask <- pseudobulk_legend$Cell.type == ctypes[i]
         n_cells_per_sample <- colSums(pseudobulk_legend[mask, -c(1, 2)])
         frac_per_sample <- n_cells_per_sample / total_cells_per_sample
+        
+        ctype_genes <- ctype_genes_list[[which(names(ctype_genes_list) %in% ctypes[i])]]
 
         if (var(frac_per_sample) > 0) {
             # Get most enriched cell type module
@@ -33,30 +35,33 @@ get_top_corr_mods <- function(network_dir, pseudobulk_legend, top_qval_mods_df, 
                 kME_path <- list.files(networks[j])[grep("kME", list.files(networks[j]))]
                 ME_path <- list.files(networks[j])[grep("eigengene", list.files(networks[j]))]
                 ME_df <- fread(file.path(networks[j], ME_path), data.table=FALSE)
-
                 ME_corrs <- apply(ME_df[,-1, drop=FALSE], 2, function(ME) {
                     cor(ME, frac_per_sample)
                 })
-
                 new_mod <- names(which.max(ME_corrs))
                 new_corr <- ME_corrs[which.max(ME_corrs)]
                 
-                # Save the network the module came from
+                # Save the network the new module came from
                 network_id <- sapply(strsplit(networks[j], "/"), function(x) x[length(x)])
                 
                 data.frame(
                     Cell_type=ctypes[i],
+                    Pseudobulk_SD=round(sd(n_cells_per_sample), 2),
                     Cor=new_corr,
                     Old_cor=old_corr,
+                    Pval=NA,
+                    Old_pval=top_qval_mods_df$Pval[i],
+                    Module_genes=NA,
+                    Old_module_genes=NA,
+                    DE_genes=paste(ctype_genes[1:15], collapse=", "),
                     Module=new_mod,
                     Old_module=old_mod,
                     Network=network_id,
                     Old_network=top_qval_mods_df$Network[i],
-                    Qval=NA,
-                    Old_qval=top_qval_mods_df$Qval[i],
-                    Pseudobulk_SD=round(sd(n_cells_per_sample), 2),
-                    New_ME_path=file.path(networks[j], ME_path),
-                    New_kME_path=file.path(networks[j], kME_path)
+                    ME_path=file.path(networks[j], ME_path),
+                    Old_ME_path=top_qval_mods_df$ME_path[i],
+                    kME_path=file.path(networks[j], kME_path),
+                    Old_kME_path=top_qval_mods_df$kME_path[i]
                 )
             })
             ME_corrs <- do.call(rbind, ME_corrs_list)
@@ -69,10 +74,28 @@ get_top_corr_mods <- function(network_dir, pseudobulk_legend, top_qval_mods_df, 
 
     top_corr_mods_df <- do.call(rbind, top_corr_mods_list)
 
-    # Get top corr modules enrichment qvalues
-    enrich_pvals <- get_top_corr_mods_enrichments(top_corr_mods_25SD_PosBC_df, ctype_genes_list, mod_def)
-    enrich_qvals <- qvalue(enrich_pvals)$qvalue
-    top_corr_mods_df$Qval <- enrich_qvals 
+    # Get top corr module enrichment for cell type genes
+    enrich_pvals <- get_top_corr_mods_enrichments(top_corr_mods_df, ctype_genes_list, mod_def)
+    top_corr_mods_df$Pval <- enrich_pvals
+
+    # Get module genes 
+    new_mod_genes <- lapply(1:nrow(top_corr_mods_df), function(i) {
+        paste(
+            get_mod_genes(top_corr_mods_df$kME_path[i], top_corr_mods_df$Module[i], mod_def, n_genes=15), 
+            collapse=", "
+        )
+    }) 
+    old_mod_genes <- lapply(1:nrow(top_corr_mods_df), function(i) {
+        paste(
+            get_mod_genes(top_corr_mods_df$Old_kME_path[i], top_corr_mods_df$Old_module[i], mod_def, n_genes=15), 
+            collapse=", "
+        )
+    }) 
+    top_corr_mods_df$Module_genes <- unlist(new_mod_genes) 
+    top_corr_mods_df$Old_module_genes <- unlist(old_mod_genes)
+
+    # Finally, add cell type DE genes
+
 
     top_corr_mods_df %>%
         arrange(Cor)
@@ -82,7 +105,7 @@ get_top_corr_mods_enrichments <- function(top_corr_mods_df, ctype_genes_list, mo
     enrich_pvals <- c()
     for (i in 1:nrow(top_corr_mods_df)) {
         # Get genes for most correlated module
-        kME <- fread(top_corr_mods_df$New_kME_path[i], data.table=FALSE)
+        kME <- fread(top_corr_mods_df$kME_path[i], data.table=FALSE)
         mod_assignment_col <- grep(mod_def, colnames(kME))
         mod_genes <- kME$Gene[kME[,mod_assignment_col] %in% top_corr_mods_df$Module[i]]
         if (length(mod_genes) > 0) {
@@ -100,10 +123,18 @@ get_top_corr_mods_enrichments <- function(top_corr_mods_df, ctype_genes_list, mo
     enrich_pvals
 }
 
+get_mod_genes <- function(kME_path, module, mod_def="PosFDR", n_genes=10) {
+    kME <- fread(kME_path, data.table=FALSE)
+    kME <- kME[order(-kME[,paste0("kME", module)]),]
+    mod_assignment_col <- grep(mod_def, colnames(kME))
+    mod_genes <- kME$Gene[kME[,mod_assignment_col] %in% module]
+    mod_genes[1:n_genes]
+}
+
 get_top_corr_mod_stats <- function(top_corr_mods_df) {
     ctypes <- top_corr_mods_df$Cell_type
 
-    top_corr_mods_df$Mod_stats_path <- sapply(top_corr_mods_df$New_ME_path, function(x) gsub("eigengenes", "statistics", x))
+    top_corr_mods_df$Mod_stats_path <- sapply(top_corr_mods_df$ME_path, function(x) gsub("eigengenes", "statistics", x))
 
     mod_stats <- fread(top_corr_mods_df$Mod_stats_path[1], data.table=FALSE)
     col_idx <- which(colnames(mod_stats) %in% c("PC1VE", "MeanExpr", "Specificity", "Homogeneity"))
@@ -184,7 +215,7 @@ plot_ctype_abundance_vs_top_corr_ME <- function(pseudobulk_legend, top_corr_mods
 
         # Get eigengene from most enriched cell type module
         mod <- top_corr_mods_df$Module[i]
-        ME_df <- fread(top_corr_mods_df$New_ME_path[i], data.table=FALSE)
+        ME_df <- fread(top_corr_mods_df$ME_path[i], data.table=FALSE)
         ME_vec <- ME_df[,grep(paste0("^", mod, "$"), colnames(ME_df))]
 
         df <- data.frame(Frac=frac_per_sample, ME=ME_vec)
