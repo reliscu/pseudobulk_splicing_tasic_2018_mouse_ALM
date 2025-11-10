@@ -263,7 +263,7 @@ plot_ctype_abundance <- function(pseudobulk_legend, top_qval_mods_df) {
         subtitle <- paste("SD =", n_cells_SD)
 
         # Plot cell type proportion vs. module eigengene
-        df <- data.frame(Sample=1:length(n_cells_per_sample), No.cells=n_cells_per_sample)
+        df <- data.frame(Sample=1:length(n_cells_per_sample), No.cells=sort(n_cells_per_sample))
 
         options(repr.plot.width=15, repr.plot.height=6)
 
