@@ -8,7 +8,8 @@ source("/mnt/lareaulab/reliscu/code/ggplot_theme.R")
 theme_set(default_theme())
 
 get_top_corr_mods <- function(network_dir, pseudobulk_legend, top_qval_mods_df, ctype_genes_list, mod_def) {
-    ctypes <- top_qval_mods_df$Cell_type
+    top_qval_mods_df <- top_qval_mods_df[top_qval_mods_df$Cell_type %in% names(ctype_genes_list),]
+    ctypes <- unique(top_qval_mods_df$Cell_type) 
     top_corr_mods_list <- vector(mode="list", length=length(ctypes))
     total_cells_per_sample <- colSums(pseudobulk_legend[,-c(1, 2)])
     
